@@ -1,6 +1,19 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { ConfigManager } from './config';
+import { ConfigManager, maskApiKey } from './config';
+import type { ApiProviderName, Config } from '../types';
+
+type WizardAnswers = {
+  provider: 'ollama' | 'api';
+  ollamaBaseUrl?: string;
+  ollamaModel?: string;
+  apiProvider?: ApiProviderName;
+  apiKey?: string;
+  apiBaseUrl?: string;
+  apiModel?: string;
+  enableHistory: boolean;
+  enableYAMLPrompt: boolean;
+};
 
 export async function runConfigWizard(): Promise<void> {
   console.log(chalk.cyan.bold('\n🚀 English Optimizer CLI - Configuration Wizard\n'));
@@ -8,9 +21,11 @@ export async function runConfigWizard(): Promise<void> {
   const configManager = new ConfigManager();
   const currentConfig = configManager.getConfig();
 
-  const answers = await inquirer.prompt([
+  const existingApiKey = currentConfig.ai.api?.apiKey?.trim() || '';
+
+  const answers = await inquirer.prompt<WizardAnswers>([
     {
-      type: 'list',
+      type: 'select',
       name: 'provider',
       message: 'Select AI provider:',
       choices: [
@@ -24,7 +39,7 @@ export async function runConfigWizard(): Promise<void> {
       name: 'ollamaBaseUrl',
       message: 'Ollama base URL:',
       default: currentConfig.ai.ollama?.baseUrl || 'http://localhost:11434',
-      when: (answers: any) => answers.provider === 'ollama',
+      when: (answers) => answers.provider === 'ollama',
       validate: (input: string) => {
         try {
           new URL(input);
@@ -39,31 +54,35 @@ export async function runConfigWizard(): Promise<void> {
       name: 'ollamaModel',
       message: 'Ollama model name:',
       default: currentConfig.ai.ollama?.model || 'llama3.2:3b',
-      when: (answers: any) => answers.provider === 'ollama',
+      when: (answers) => answers.provider === 'ollama',
     },
     {
-      type: 'list',
+      type: 'select',
       name: 'apiProvider',
       message: 'Select API provider:',
       choices: [
-        { name: '🔵 OpenAI (GPT-4, GPT-3.5)', value: 'openai' },
+        { name: '🔵 OpenAI (GPT-4o / GPT-4o-mini)', value: 'openai' },
         { name: '🟢 GLM (Zhipu AI)', value: 'glm' },
         { name: '🔷 DeepSeek', value: 'deepseek' },
         { name: '🟣 Aliyun Qwen', value: 'qwen' },
         { name: '🌙 Moonshot (Kimi)', value: 'moonshot' },
+        { name: '🔀 OpenRouter (Claude / GPT / Gemini)', value: 'openrouter' },
+        { name: '✨ Google Gemini (OpenAI-compatible)', value: 'gemini' },
         { name: '🔧 Custom API', value: 'custom' },
       ],
       default: currentConfig.ai.api?.provider || 'openai',
-      when: (answers: any) => answers.provider === 'api',
+      when: (answers) => answers.provider === 'api',
     },
     {
-      type: 'input',
+      type: 'password',
       name: 'apiKey',
-      message: 'Enter your API key:',
-      default: currentConfig.ai.api?.apiKey || '',
-      when: (answers: any) => answers.provider === 'api',
+      message: existingApiKey
+        ? `Enter your API key (leave empty to keep ${maskApiKey(existingApiKey)}):`
+        : 'Enter your API key:',
+      mask: '*',
+      when: (answers) => answers.provider === 'api',
       validate: (input: string) => {
-        if (!input || input.trim() === '') {
+        if ((!input || input.trim() === '') && !existingApiKey) {
           return 'API key cannot be empty';
         }
         return true;
@@ -73,7 +92,7 @@ export async function runConfigWizard(): Promise<void> {
       type: 'input',
       name: 'apiBaseUrl',
       message: 'API base URL:',
-      default: (answers: any) => {
+      default: (answers) => {
         const currentUrl = currentConfig.ai.api?.baseUrl || '';
         const providerDefaults: Record<string, string> = {
           openai: 'https://api.openai.com/v1',
@@ -81,11 +100,13 @@ export async function runConfigWizard(): Promise<void> {
           deepseek: 'https://api.deepseek.com/v1',
           qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
           moonshot: 'https://api.moonshot.cn/v1',
+          openrouter: 'https://openrouter.ai/api/v1',
+          gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
           custom: currentUrl,
         };
-        return providerDefaults[answers.apiProvider] || currentUrl;
+        return providerDefaults[answers.apiProvider ?? 'custom'] || currentUrl;
       },
-      when: (answers: any) => answers.provider === 'api',
+      when: (answers) => answers.provider === 'api',
       validate: (input: string) => {
         try {
           new URL(input);
@@ -99,19 +120,21 @@ export async function runConfigWizard(): Promise<void> {
       type: 'input',
       name: 'apiModel',
       message: 'Model name:',
-      default: (answers: any) => {
+      default: (answers) => {
         const currentModel = currentConfig.ai.api?.model || '';
         const modelDefaults: Record<string, string> = {
-          openai: 'gpt-4o',
+          openai: 'gpt-4o-mini',
           glm: 'glm-4',
           deepseek: 'deepseek-chat',
           qwen: 'qwen-turbo',
           moonshot: 'moonshot-v1-8k',
+          openrouter: 'anthropic/claude-sonnet-4',
+          gemini: 'gemini-2.5-flash',
           custom: currentModel,
         };
-        return modelDefaults[answers.apiProvider] || currentModel;
+        return modelDefaults[answers.apiProvider ?? 'custom'] || currentModel;
       },
-      when: (answers: any) => answers.provider === 'api',
+      when: (answers) => answers.provider === 'api',
     },
     {
       type: 'confirm',
@@ -122,32 +145,32 @@ export async function runConfigWizard(): Promise<void> {
     {
       type: 'confirm',
       name: 'enableYAMLPrompt',
-      message: 'Use YAML prompt configuration (conversational mode)?',
-      default: true,
+      message: 'Use ./prompt.yaml when it exists in the current directory?',
+      default: currentConfig.features.useYAMLPrompt ?? true,
     },
   ]);
 
   // Build new config
-  const newConfig = {
+  const newConfig: Config = {
     ...currentConfig,
     ai: {
-      provider: answers.provider as 'ollama' | 'api',
+      provider: answers.provider,
       ollama:
         answers.provider === 'ollama'
           ? {
-              baseUrl: answers.ollamaBaseUrl,
-              model: answers.ollamaModel,
+              baseUrl: answers.ollamaBaseUrl!,
+              model: answers.ollamaModel!,
             }
-          : undefined,
+          : currentConfig.ai.ollama,
       api:
         answers.provider === 'api'
           ? {
-              provider: answers.apiProvider,
-              apiKey: answers.apiKey,
-              baseUrl: answers.apiBaseUrl,
-              model: answers.apiModel,
+              provider: answers.apiProvider!,
+              apiKey: answers.apiKey?.trim() || existingApiKey,
+              baseUrl: answers.apiBaseUrl!,
+              model: answers.apiModel!,
             }
-          : undefined,
+          : currentConfig.ai.api,
     },
     features: {
       ...currentConfig.features,
@@ -158,7 +181,7 @@ export async function runConfigWizard(): Promise<void> {
 
   // Save config
   console.log(chalk.cyan('\n💾 Saving configuration...\n'));
-  configManager.saveConfig(newConfig as any);
+  configManager.saveConfig(newConfig);
 
   console.log(chalk.green.bold('✅ Configuration saved successfully!\n'));
 

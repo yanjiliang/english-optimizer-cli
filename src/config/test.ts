@@ -1,11 +1,16 @@
 import chalk from 'chalk';
-import { configManager } from './config';
+import { applyCliOverrides, configManager, maskApiKey } from './config';
 import { createProvider } from '../ai/provider';
+import { CliConfigOverrides, OptimizationMode } from '../types';
 
-export async function testConfiguration(): Promise<void> {
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export async function testConfiguration(overrides?: CliConfigOverrides): Promise<void> {
   console.log(chalk.cyan.bold('\n🧪 Testing API Configuration...\n'));
 
-  const config = configManager.getConfig();
+  const config = applyCliOverrides(configManager.getConfig(), overrides);
 
   try {
     const provider = createProvider(config);
@@ -21,7 +26,7 @@ export async function testConfiguration(): Promise<void> {
       console.log(chalk.gray('API Model:'), chalk.white(config.ai.api!.model));
       console.log(
         chalk.gray('API Key:'),
-        chalk.white(config.ai.api!.apiKey.substring(0, 8) + '...')
+        chalk.white(maskApiKey(config.ai.api!.apiKey) || '(not set)')
       );
     }
 
@@ -31,8 +36,8 @@ export async function testConfiguration(): Promise<void> {
     let isAvailable = false;
     try {
       isAvailable = await provider.isAvailable();
-    } catch (e: any) {
-      if (e.message.includes('balance is insufficient')) {
+    } catch (e: unknown) {
+      if (getErrorMessage(e).includes('balance is insufficient')) {
         console.log(chalk.red.bold('\n❌ GLM Account Balance Issue!\n'));
         console.log(chalk.yellow('Your GLM account has insufficient balance.\n'));
         console.log(chalk.cyan('💡 To fix:'));
@@ -52,16 +57,16 @@ export async function testConfiguration(): Promise<void> {
 
         try {
           const testText = 'Hello';
-          const optimized = await provider.optimize(testText, 'professional' as any);
+          const optimized = await provider.optimize(testText, OptimizationMode.PROFESSIONAL);
 
           console.log(chalk.cyan('Test Input:'), chalk.white(testText));
           console.log(chalk.cyan('Test Output:'), chalk.white(optimized));
           console.log(
             '\n' + chalk.green.bold('✅ Full test passed! Your API is working correctly.\n')
           );
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.log(chalk.yellow('\n⚠️  Connection successful but request failed:'));
-          console.log(chalk.gray((error as Error).message));
+          console.log(chalk.gray(getErrorMessage(error)));
 
           console.log('\n' + chalk.cyan('Possible issues:'));
           console.log(chalk.gray('  - API key may be invalid or expired'));
@@ -99,11 +104,12 @@ export async function testConfiguration(): Promise<void> {
 
       process.exit(1);
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
     console.log(chalk.red.bold('\n❌ Configuration error!\n'));
-    console.log(chalk.gray(error.message));
+    console.log(chalk.gray(message));
 
-    if (error.message.includes('API key')) {
+    if (message.includes('API key')) {
       console.log('\n' + chalk.cyan('💡 Tip: Make sure your API key is correct and active.'));
       console.log(chalk.gray('  For OpenAI: https://platform.openai.com/api-keys'));
       console.log(chalk.gray('  For GLM: https://open.bigmodel.cn/usercenter/apikeys'));

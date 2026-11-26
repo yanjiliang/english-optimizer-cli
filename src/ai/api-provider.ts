@@ -1,13 +1,35 @@
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import chalk from 'chalk';
-import { AIProvider, OptimizationMode } from '../types';
-import { getPromptTemplate } from '../prompts/templates';
+import { AIProvider, ApiProviderName, GenerateOptions, OptimizationMode } from '../types';
+import { getModePrompts } from '../prompts/templates';
+import { cleanupModelResponse } from '../prompts/template-utils';
+import { isAsyncIterable, readOpenAISSEStream, readStreamAsString } from './stream-utils';
 
 export interface ApiProviderConfig {
-  provider: 'openai' | 'glm' | 'custom';
+  provider: ApiProviderName;
   apiKey: string;
   baseUrl: string;
   model: string;
+}
+
+interface ApiErrorBody {
+  error?: {
+    code?: string | number;
+    message?: string;
+  };
+}
+
+interface ChatCompletionResponse {
+  choices?: Array<{ message?: { content?: string } }>;
+}
+
+const GLM_INSUFFICIENT_BALANCE_CODE = '1113';
+const GLM_BALANCE_MESSAGE =
+  'GLM account balance is insufficient. Please recharge your account at https://open.bigmodel.cn/usercenter/finance';
+
+function isGlmBalanceError(data: unknown): boolean {
+  const body = data as ApiErrorBody | undefined;
+  return String(body?.error?.code) === GLM_INSUFFICIENT_BALANCE_CODE;
 }
 
 export class ApiProvider implements AIProvider {
@@ -17,18 +39,45 @@ export class ApiProvider implements AIProvider {
     this.config = config;
   }
 
-  private handleApiError(error: any): never {
-    if (axios.isAxiosError(error)) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response) {
-        const status = axiosError.response.status;
-        const data: any = axiosError.response.data;
+  get name(): string {
+    return this.config.provider;
+  }
 
-        // Handle GLM specific errors
-        if (data?.error?.code === '1113') {
-          throw new Error(
-            'GLM account balance is insufficient. Please recharge your account at https://open.bigmodel.cn/usercenter/finance'
-          );
+  get model(): string {
+    return this.config.model;
+  }
+
+  private get completionsUrl(): string {
+    return `${this.config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+  }
+
+  private async extractErrorBody(data: unknown): Promise<unknown> {
+    if (!isAsyncIterable(data)) {
+      return data;
+    }
+    try {
+      const raw = await readStreamAsString(data);
+      if (!raw.trim()) {
+        return undefined;
+      }
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return { error: { message: raw.trim() } };
+      }
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async handleApiError(error: unknown): Promise<never> {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const status = error.response.status;
+        const body = await this.extractErrorBody(error.response.data);
+
+        if (isGlmBalanceError(body)) {
+          throw new Error(GLM_BALANCE_MESSAGE);
         }
 
         if (status === 401) {
@@ -36,37 +85,49 @@ export class ApiProvider implements AIProvider {
         } else if (status === 429) {
           throw new Error('Rate limit exceeded. Please try again later.');
         }
+
+        const detail = (body as ApiErrorBody | undefined)?.error?.message;
+        if (detail) {
+          throw new Error(`API error (${status}): ${detail}`);
+        }
       }
-      throw new Error(`API error: ${axiosError.message}`);
+      throw new Error(`API error: ${error.message}`);
     }
     throw error;
   }
 
-  async optimize(text: string, mode: OptimizationMode): Promise<string> {
-    const prompt = getPromptTemplate(mode, text);
-    const result = await this.callAPI(prompt);
-    return this.cleanupResponse(result, true);
+  async optimize(text: string, mode: OptimizationMode, options?: GenerateOptions): Promise<string> {
+    const { systemPrompt, userPrompt } = getModePrompts(mode, text);
+    const result = await this.callAPI(userPrompt, {
+      ...options,
+      systemPrompt: options?.systemPrompt ?? systemPrompt,
+    });
+    return cleanupModelResponse(result, true);
   }
 
-  async generateWithPrompt(prompt: string): Promise<string> {
-    const result = await this.callAPI(prompt);
-    return this.cleanupResponse(result, false);
+  async generateWithPrompt(prompt: string, options?: GenerateOptions): Promise<string> {
+    const result = await this.callAPI(prompt, options);
+    return cleanupModelResponse(result, true);
   }
 
-  private async callAPI(prompt: string): Promise<string> {
+  private async callAPI(prompt: string, options?: GenerateOptions): Promise<string> {
+    const streaming = Boolean(options?.onToken);
+    const messages = options?.systemPrompt
+      ? [
+          { role: 'system', content: options.systemPrompt },
+          { role: 'user', content: prompt },
+        ]
+      : [{ role: 'user', content: prompt }];
+
     try {
-      const response = await axios.post(
-        `${this.config.baseUrl}/chat/completions`,
+      const response = await axios.post<ChatCompletionResponse | AsyncIterable<Buffer | string>>(
+        this.completionsUrl,
         {
           model: this.config.model,
-          messages: [
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
+          messages,
           temperature: 0.7,
           max_tokens: 2000,
+          ...(streaming ? { stream: true } : {}),
         },
         {
           headers: {
@@ -74,37 +135,32 @@ export class ApiProvider implements AIProvider {
             'Content-Type': 'application/json',
           },
           timeout: 60000,
+          ...(streaming ? { responseType: 'stream' as const } : {}),
         }
       );
 
-      if (response.data && response.data.choices && response.data.choices.length > 0) {
-        return response.data.choices[0].message.content.trim();
+      if (streaming && isAsyncIterable(response.data)) {
+        const result = await readOpenAISSEStream(response.data, options?.onToken);
+        if (result) {
+          return result;
+        }
+        throw new Error('Invalid response from API');
+      }
+
+      const data = response.data as ChatCompletionResponse;
+      const content = data?.choices?.[0]?.message?.content;
+      if (typeof content === 'string') {
+        const trimmed = content.trim();
+        if (streaming && trimmed) {
+          options?.onToken?.(trimmed);
+        }
+        return trimmed;
       }
 
       throw new Error('Invalid response from API');
     } catch (error) {
-      this.handleApiError(error);
+      return await this.handleApiError(error);
     }
-  }
-
-  private cleanupResponse(result: string, removePrefixes: boolean): string {
-    // Remove quotes if model wrapped the response in them
-    if (result.startsWith('"') && result.endsWith('"')) {
-      result = result.slice(1, -1);
-    }
-
-    // Remove common prefixes if present
-    if (removePrefixes) {
-      const prefixesToRemove = ['Rewritten text:', 'Corrected text:', 'Optimized text:'];
-      for (const prefix of prefixesToRemove) {
-        if (result.startsWith(prefix)) {
-          result = result.slice(prefix.length).trim();
-          break;
-        }
-      }
-    }
-
-    return result;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -115,7 +171,7 @@ export class ApiProvider implements AIProvider {
     try {
       // Try a simple API call to check if key is valid
       const response = await axios.post(
-        `${this.config.baseUrl}/chat/completions`,
+        this.completionsUrl,
         {
           model: this.config.model,
           messages: [{ role: 'user', content: 'test' }],
@@ -130,7 +186,12 @@ export class ApiProvider implements AIProvider {
         }
       );
       return response.status === 200;
-    } catch (error: any) {
+    } catch (error) {
+      if (!axios.isAxiosError(error)) {
+        console.log('\n' + chalk.yellow('Request setup error:'), (error as Error).message);
+        return false;
+      }
+
       if (error.response) {
         console.log(
           '\n' + chalk.yellow('API connection failed with status:'),
@@ -140,10 +201,8 @@ export class ApiProvider implements AIProvider {
           console.log(chalk.yellow('Error details:'), JSON.stringify(error.response.data));
 
           // Throw error for GLM balance issues
-          if (error.response.data?.error?.code === '1113') {
-            throw new Error(
-              'GLM account balance is insufficient. Please recharge your account at https://open.bigmodel.cn/usercenter/finance'
-            );
+          if (isGlmBalanceError(error.response.data)) {
+            throw new Error(GLM_BALANCE_MESSAGE);
           }
         }
       } else if (error.request) {

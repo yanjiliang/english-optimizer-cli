@@ -13,7 +13,7 @@ ai:
 
   # API Configuration (when provider: 'api')
   api:
-    # Provider type: 'openai', 'glm', or 'custom'
+    # Provider type: 'openai', 'glm', 'deepseek', 'qwen', 'moonshot', 'openrouter', 'gemini', or 'custom'
     provider: 'openai'
 
     # Your API key (get from your API provider's dashboard)
@@ -23,12 +23,24 @@ ai:
     baseUrl: 'https://api.openai.com/v1'
 
     # Model name to use
-    model: 'gpt-3.5-turbo'
+    model: 'gpt-4o-mini'
 
     # OpenAI Examples:
     # - apiKey: 'sk-xxx'
     # - baseUrl: 'https://api.openai.com/v1'
-    # - model: 'gpt-4o' or 'gpt-4o-mini' or 'gpt-3.5-turbo'
+    # - model: 'gpt-4o-mini' or 'gpt-4o'
+
+    # OpenRouter Examples (Claude / GPT / Gemini via one key):
+    # - provider: 'openrouter'
+    # - apiKey: 'sk-or-xxx'
+    # - baseUrl: 'https://openrouter.ai/api/v1'
+    # - model: 'anthropic/claude-sonnet-4'
+
+    # Google Gemini Examples:
+    # - provider: 'gemini'
+    # - apiKey: 'your-gemini-key'
+    # - baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai'
+    # - model: 'gemini-2.5-flash'
 
     # GLM (Zhipu AI) Examples:
     # - provider: 'glm'
