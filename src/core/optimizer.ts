@@ -1,75 +1,96 @@
-import { AIProvider, OptimizationMode, OptimizationResult, CustomPrompt } from '../types';
+import {
+  AIProvider,
+  CustomPrompt,
+  GenerateOptions,
+  OptimizationMode,
+  OptimizationResult,
+} from '../types';
 import { HistoryLogger } from '../history/logger';
-import { YAMLPromptLoader } from '../prompts/yaml-prompt';
+import { buildCustomPrompt } from '../prompts/template-utils';
 
 export class Optimizer {
   public provider: AIProvider;
   private historyLogger?: HistoryLogger;
-  private yamlPromptLoader?: YAMLPromptLoader;
 
-  constructor(provider: AIProvider, historyLogger?: HistoryLogger, useYAMLPrompt: boolean = false) {
+  constructor(provider: AIProvider, historyLogger?: HistoryLogger) {
     this.provider = provider;
     this.historyLogger = historyLogger;
-
-    if (useYAMLPrompt) {
-      this.yamlPromptLoader = new YAMLPromptLoader();
-    }
   }
 
-  async optimize(text: string, mode: OptimizationMode): Promise<OptimizationResult> {
-    const optimized = await this.provider.optimize(text, mode);
+  /** Optimize text with one of the built-in modes. */
+  async optimize(
+    text: string,
+    mode: OptimizationMode,
+    options?: GenerateOptions
+  ): Promise<OptimizationResult> {
+    const optimized = options
+      ? await this.provider.optimize(text, mode, options)
+      : await this.provider.optimize(text, mode);
     return this.createResult(text, optimized, mode);
   }
 
-  async optimizeWithYAMLPrompt(text: string): Promise<OptimizationResult> {
-    if (!this.yamlPromptLoader || !this.yamlPromptLoader.hasYAMLPrompt()) {
-      throw new Error('YAML prompt not available');
-    }
-
-    const prompt = this.yamlPromptLoader.buildPrompt(text);
-    const optimized = await this.provider.generateWithPrompt(prompt);
-    return this.createResult(text, optimized, OptimizationMode.PROFESSIONAL);
+  /** Run a fully-built prompt and record the result under the given mode label. */
+  async generate(
+    text: string,
+    prompt: string,
+    modeLabel: string,
+    options?: GenerateOptions
+  ): Promise<OptimizationResult> {
+    const optimized = options
+      ? await this.provider.generateWithPrompt(prompt, options)
+      : await this.provider.generateWithPrompt(prompt);
+    return this.createResult(text, optimized, modeLabel);
   }
 
-  hasYAMLPrompt(): boolean {
-    return this.yamlPromptLoader?.hasYAMLPrompt() || false;
-  }
-
+  /** Optimize text using a user-defined prompt from prompts.json. */
   async optimizeWithCustomPrompt(
     text: string,
-    _customPrompt: CustomPrompt
+    customPrompt: CustomPrompt,
+    options?: GenerateOptions
   ): Promise<OptimizationResult> {
-    const optimized = await this.provider.optimize(text, OptimizationMode.PROFESSIONAL);
-    return this.createResult(text, optimized, OptimizationMode.PROFESSIONAL);
+    const prompt = buildCustomPrompt(customPrompt.prompt, text);
+    return this.generate(text, prompt, `custom:${customPrompt.name}`, options);
   }
 
-  private createResult(
-    original: string,
-    optimized: string,
-    mode: OptimizationMode
-  ): OptimizationResult {
+  /** Optimize text with a built-in mode without recording history (used for chunked batch). */
+  async optimizeRaw(
+    text: string,
+    mode: OptimizationMode,
+    options?: GenerateOptions
+  ): Promise<string> {
+    return options
+      ? await this.provider.optimize(text, mode, options)
+      : await this.provider.optimize(text, mode);
+  }
+
+  /** Run a prompt without recording history (used for explanations and structured parsing). */
+  async generateRaw(prompt: string, options?: GenerateOptions): Promise<string> {
+    return options
+      ? await this.provider.generateWithPrompt(prompt, options)
+      : await this.provider.generateWithPrompt(prompt);
+  }
+
+  /** Record a pre-parsed optimization result (e.g. from --explain or --variants) into history. */
+  recordResult(original: string, optimized: string, mode: string): OptimizationResult {
+    return this.createResult(original, optimized, mode);
+  }
+
+  private createResult(original: string, optimized: string, mode: string): OptimizationResult {
     const result: OptimizationResult = {
       original,
       optimized,
       mode,
       timestamp: new Date(),
-      provider: this.getProviderName(),
-      model: this.getModelName(),
+      provider: this.provider.name,
+      model: this.provider.model,
     };
 
     // Save to history if enabled
     if (this.historyLogger) {
-      this.historyLogger.addEntry(result);
+      const entry = this.historyLogger.addEntry(result);
+      result.historyId = entry.id;
     }
 
     return result;
-  }
-
-  private getProviderName(): string {
-    return this.provider.constructor.name;
-  }
-
-  private getModelName(): string {
-    return 'unknown';
   }
 }

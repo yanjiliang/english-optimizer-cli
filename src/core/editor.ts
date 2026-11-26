@@ -1,153 +1,225 @@
 import readline from 'readline';
+import { createInterface } from 'readline/promises';
 import { stdin as input, stdout as output } from 'process';
 import chalk from 'chalk';
-import { OptimizationMode } from '../types';
+import { CustomPrompt, GenerateOptions, OptimizationMode, OptimizationResult } from '../types';
 import { Optimizer } from './optimizer';
-import { displayWelcome, displayModeInfo, displayOptimization, displayHelp, displayHistoryEntry, displayError, displayInfo, displaySuccess } from '../utils/display';
+import {
+  displayWelcome,
+  displayModeInfo,
+  displayOptimization,
+  displayWordDiff,
+  displayHelp,
+  displayHistoryEntry,
+  displayError,
+  displayInfo,
+  displaySuccess,
+  shouldShowWordDiff,
+} from '../utils/display';
+import { Spinner } from '../utils/spinner';
 import { HistoryLogger } from '../history/logger';
 import { CustomPromptLoader } from '../prompts/custom';
-import { configManager } from '../config/config';
+
+const CTRL_C = '\u0003';
+
+const DEFAULT_HOTKEYS: Record<string, string> = {
+  professional: 'p',
+  concise: 'c',
+  grammar: 'g',
+  senior_developer: 'd',
+  reset: 'r',
+  history: 'h',
+  quit: 'q',
+};
+
+const MODE_BY_ACTION: Record<string, OptimizationMode> = {
+  professional: OptimizationMode.PROFESSIONAL,
+  concise: OptimizationMode.CONCISE,
+  grammar: OptimizationMode.GRAMMAR,
+  senior_developer: OptimizationMode.SENIOR_DEVELOPER,
+};
 
 export class InteractiveEditor {
   private optimizer: Optimizer;
   private historyLogger?: HistoryLogger;
   private customPromptLoader?: CustomPromptLoader;
+  private hotkeys: Record<string, string>;
+  private stream: boolean;
+  private originalText: string = '';
   private currentText: string = '';
-  private rl: readline.Interface;
 
-  constructor(optimizer: Optimizer, historyLogger?: HistoryLogger, customPromptLoader?: CustomPromptLoader) {
+  constructor(
+    optimizer: Optimizer,
+    historyLogger?: HistoryLogger,
+    customPromptLoader?: CustomPromptLoader,
+    hotkeys: Record<string, string> = {},
+    options: { stream?: boolean } = {}
+  ) {
     this.optimizer = optimizer;
     this.historyLogger = historyLogger;
     this.customPromptLoader = customPromptLoader;
-
-    this.rl = readline.createInterface({
-      input,
-      output,
-    });
+    this.hotkeys = { ...DEFAULT_HOTKEYS, ...hotkeys };
+    this.stream = options.stream ?? true;
   }
 
   async start(): Promise<void> {
     displayWelcome();
-    displayHelp();
+    displayHelp(this.hotkeys, this.getCustomPrompts());
 
-    console.log('\nEnter your text (press Enter twice to finish):\n');
+    console.log('\nEnter your text (press Enter on an empty line to finish):\n');
 
-    // Read multi-line input
-    const lines: string[] = [];
-    let emptyLineCount = 0;
-
-    while (true) {
-      const line = await this.question('');
-      lines.push(line);
-
-      if (line.trim() === '') {
-        emptyLineCount++;
-        if (emptyLineCount >= 1) {
-          break;
-        }
-      } else {
-        emptyLineCount = 0;
-      }
-    }
-
-    this.currentText = lines.join('\n').trim();
+    this.currentText = await this.readMultilineText();
+    this.originalText = this.currentText;
 
     if (!this.currentText) {
       displayInfo('No text provided. Exiting...');
-      this.rl.close();
       return;
     }
 
     await this.runOptimizationLoop();
   }
 
-  private async runOptimizationLoop(): Promise<void> {
-    const config = configManager.getConfig();
+  private async readMultilineText(): Promise<string> {
+    const rl = createInterface({ input, output });
+    const lines: string[] = [];
+    try {
+      while (true) {
+        const line = await rl.question('');
+        if (line.trim() === '') {
+          break;
+        }
+        lines.push(line);
+      }
+    } finally {
+      rl.close();
+    }
+    return lines.join('\n').trim();
+  }
 
+  private getCustomPrompts(): CustomPrompt[] {
+    return this.customPromptLoader ? this.customPromptLoader.getCustomPrompts() : [];
+  }
+
+  /** Map a pressed key to the configured action name (e.g. "professional", "quit"). */
+  private actionForKey(key: string): string | undefined {
+    return Object.keys(this.hotkeys).find((action) => this.hotkeys[action] === key);
+  }
+
+  private async runOptimizationLoop(): Promise<void> {
     while (true) {
       console.log('\n' + '═'.repeat(60));
       console.log(chalk.cyan('Current text:'));
       console.log(chalk.gray(this.currentText));
       console.log('═'.repeat(60));
 
-      console.log(chalk.yellow('\nPress a hotkey (or Ctrl+Q to quit):'));
+      console.log(chalk.yellow(`\nPress a hotkey (${this.hotkeys.quit} or Ctrl+C to quit):`));
 
-      // Use raw mode to capture single keypress
       const key = await this.captureKeypress();
+      const action = this.actionForKey(key);
 
-      if (key === '\u0003' || key === 'q') {
-        // Ctrl+C or q
+      if (key === CTRL_C || action === 'quit') {
         console.log('\n\nGoodbye! 👋\n');
         break;
-      } else if (key === 'r') {
-        // Reset
+      }
+
+      if (action === 'reset') {
+        this.currentText = this.originalText;
         console.log(chalk.yellow('\n↺ Reset to original'));
         continue;
-      } else if (key === 'h') {
-        // History
-        await this.showHistory();
-        continue;
-      } else if (key === 'p') {
-        // Professional
-        await this.performOptimization(OptimizationMode.PROFESSIONAL);
-      } else if (key === 'c') {
-        // Concise
-        await this.performOptimization(OptimizationMode.CONCISE);
-      } else if (key === 'g') {
-        // Grammar
-        await this.performOptimization(OptimizationMode.GRAMMAR);
-      } else if (key === 'd') {
-        // Senior Developer
-        await this.performOptimization(OptimizationMode.SENIOR_DEVELOPER);
-      } else if (this.customPromptLoader && config.features.enableCustomPrompts) {
-        // Check for custom prompt hotkeys
-        const customPrompt = this.customPromptLoader.getPromptByHotkey(key);
-        if (customPrompt) {
-          await this.performCustomOptimization(customPrompt);
-          continue;
-        }
       }
-    }
 
-    this.rl.close();
+      if (action === 'history') {
+        this.showHistory();
+        continue;
+      }
+
+      if (action && MODE_BY_ACTION[action]) {
+        await this.performOptimization(MODE_BY_ACTION[action]);
+        continue;
+      }
+
+      const customPrompt = this.customPromptLoader?.getPromptByHotkey(key);
+      if (customPrompt) {
+        await this.performCustomOptimization(customPrompt);
+        continue;
+      }
+
+      displayInfo(`Unknown hotkey "${key.trim() || key}".`);
+    }
   }
 
   private async performOptimization(mode: OptimizationMode): Promise<void> {
+    displayModeInfo(mode);
+    await this.runAndOffer((genOptions) =>
+      this.optimizer.optimize(this.currentText, mode, genOptions)
+    );
+  }
+
+  private async performCustomOptimization(customPrompt: CustomPrompt): Promise<void> {
+    console.log(chalk.yellow(`\n[${customPrompt.name}]`));
+    console.log(chalk.gray(customPrompt.description));
+    await this.runAndOffer((genOptions) =>
+      this.optimizer.optimizeWithCustomPrompt(this.currentText, customPrompt, genOptions)
+    );
+  }
+
+  /** Run an optimization, show the result and ask whether to keep it. */
+  private async runAndOffer(
+    run: (genOptions?: GenerateOptions) => Promise<OptimizationResult>
+  ): Promise<void> {
+    const spinner = new Spinner('Optimizing...', output);
     try {
-      displayModeInfo(mode);
-      console.log(chalk.gray('Optimizing...'));
+      let streamedAny = false;
+      let lastChunkEndedWithNewline = false;
 
-      const result = await this.optimizer.optimize(this.currentText, mode);
+      const genOptions: GenerateOptions | undefined = this.stream
+        ? {
+            onToken: (token: string) => {
+              if (!streamedAny) {
+                spinner.stop();
+                console.log(chalk.gray('\n' + '─'.repeat(60)));
+                console.log(chalk.red('\n❌ Original:'));
+                console.log(chalk.gray(this.currentText));
+                console.log(chalk.green('\n✅ Optimized:'));
+                streamedAny = true;
+              }
+              output.write(chalk.white(token));
+              lastChunkEndedWithNewline = token.endsWith('\n');
+            },
+          }
+        : undefined;
 
-      displayOptimization(result.original, result.optimized);
+      spinner.start();
+      const result = await run(genOptions);
+      spinner.stop();
 
-      // Ask if user wants to use the optimized version
+      if (streamedAny) {
+        if (!lastChunkEndedWithNewline) {
+          output.write('\n');
+        }
+        console.log(chalk.gray('\n' + '─'.repeat(60)));
+      } else {
+        displayOptimization(result.original, result.optimized);
+      }
+
+      if (shouldShowWordDiff(result.original, result.optimized)) {
+        displayWordDiff(result.original, result.optimized);
+      }
+
+      console.log(chalk.gray(`${spinner.elapsedSeconds()} · ${result.provider}/${result.model}`));
+
       const accept = await this.question('\nUse this version? (y/n): ');
-
-      if (accept.toLowerCase() === 'y') {
+      if (accept.trim().toLowerCase() === 'y') {
         this.currentText = result.optimized;
         displaySuccess('Text updated!');
       }
     } catch (error) {
+      spinner.stop();
       displayError(error as Error);
     }
   }
 
-  private async performCustomOptimization(customPrompt: any): Promise<void> {
-    try {
-      console.log(chalk.yellow(`\n[${customPrompt.name}]`));
-      console.log(chalk.gray(customPrompt.description));
-      console.log(chalk.gray('Optimizing...'));
-
-      // For custom prompts, we'd need to extend the provider
-      // For now, this is a placeholder
-      displayInfo('Custom prompts will be implemented soon!');
-    } catch (error) {
-      displayError(error as Error);
-    }
-  }
-
-  private async showHistory(): Promise<void> {
+  private showHistory(): void {
     if (!this.historyLogger) {
       displayInfo('History is disabled.');
       return;
@@ -167,33 +239,45 @@ export class InteractiveEditor {
     }
   }
 
-  private question(query: string): Promise<string> {
-    return new Promise((resolve) => {
-      this.rl.question(query, (answer) => {
-        resolve(answer);
-      });
-    });
+  /**
+   * Ask a single line question. A fresh interface is used per question so that
+   * keys captured in raw mode never leak into a readline line buffer.
+   */
+  private async question(query: string): Promise<string> {
+    const rl = createInterface({ input, output });
+    try {
+      return await rl.question(query);
+    } finally {
+      rl.close();
+    }
   }
 
-  private captureKeypress(): Promise<string> {
-    return new Promise((resolve) => {
-      const originalRawMode = (input as any).isRaw;
+  /** Read a single key press. Falls back to reading a line when stdin is not a TTY. */
+  private async captureKeypress(): Promise<string> {
+    if (!input.isTTY) {
+      const line = await this.question('');
+      return line.trim().charAt(0);
+    }
 
+    return new Promise((resolve) => {
+      readline.emitKeypressEvents(input);
+      const wasRaw = input.isRaw;
       input.setRawMode(true);
       input.resume();
 
-      input.once('data', (key: Buffer) => {
-        input.setRawMode(originalRawMode);
+      const onKeypress = (str: string | undefined, key?: readline.Key) => {
+        input.off('keypress', onKeypress);
+        input.setRawMode(wasRaw);
         input.pause();
-        input.removeAllListeners('data');
 
-        const str = key.toString('utf8');
-        resolve(str);
-      });
+        if (key?.ctrl && key.name === 'c') {
+          resolve(CTRL_C);
+        } else {
+          resolve(str ?? key?.name ?? '');
+        }
+      };
+
+      input.on('keypress', onKeypress);
     });
-  }
-
-  close(): void {
-    this.rl.close();
   }
 }
