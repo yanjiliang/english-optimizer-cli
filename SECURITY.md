@@ -6,8 +6,8 @@ We release patches for security vulnerabilities for the following versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.5.x   | :white_check_mark: |
-| < 1.5   | :x:                |
+| 2.0.x   | :white_check_mark: |
+| < 2.0   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -46,8 +46,8 @@ When using English Optimizer CLI:
 
 ## Known Security Considerations
 
-- API keys are stored in plain text in configuration files (`~/.english-optimizer/config.yaml` or `.env`)
-- Ensure proper file permissions on configuration files containing API keys
-- Be cautious when sharing history files as they may contain sensitive text
+- API keys are stored in configuration files (`~/.english-optimizer/config.yaml` or `.env`); files written by `cao` use restrictive `0600` permissions on Unix systems, and CLI display commands (`config --show`, `setup`, `test`) automatically mask API keys
+- Project-local `./.env` files are only inspected for `CAO_*`-prefixed variables so unrelated projects' `API_KEY` values cannot accidentally be sent to an LLM provider
+- Be cautious when sharing history files or exported phrasebooks as they may contain sensitive text
 
 Thank you for helping keep English Optimizer CLI and its users safe!

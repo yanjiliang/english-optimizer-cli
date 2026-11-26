@@ -84,41 +84,41 @@ ai:
 
 ## 方法2: 使用环境变量
 
-在项目目录创建 `.env` 文件：
+在 `~/.english-optimizer/.env` 或当前目录创建 `.env` 文件（当前目录仅读取 `CAO_` 前缀变量，避免与其他项目冲突）：
 
 ```bash
-cp .env.example .env
-code .env
+cp .env.example ~/.english-optimizer/.env
+code ~/.english-optimizer/.env
 ```
 
 ### OpenAI 环境变量
 
 ```env
-AI_PROVIDER=api
-API_PROVIDER=openai
-API_KEY=sk-your-openai-api-key-here
-API_BASE_URL=https://api.openai.com/v1
-API_MODEL=gpt-4o
+CAO_AI_PROVIDER=api
+CAO_API_PROVIDER=openai
+CAO_API_KEY=sk-your-openai-api-key-here
+CAO_API_BASE_URL=https://api.openai.com/v1
+CAO_API_MODEL=gpt-4o
 ```
 
 ### GLM 环境变量
 
 ```env
-AI_PROVIDER=api
-API_PROVIDER=glm
-API_KEY=your-glm-api-key-here
-API_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-API_MODEL=glm-4
+CAO_AI_PROVIDER=api
+CAO_API_PROVIDER=glm
+CAO_API_KEY=your-glm-api-key-here
+CAO_API_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+CAO_API_MODEL=glm-4
 ```
 
 ### DeepSeek 环境变量
 
 ```env
-AI_PROVIDER=api
-API_PROVIDER=custom
-API_KEY=your-deepseek-api-key-here
-API_BASE_URL=https://api.deepseek.com/v1
-API_MODEL=deepseek-chat
+CAO_AI_PROVIDER=api
+CAO_API_PROVIDER=deepseek
+CAO_API_KEY=your-deepseek-api-key-here
+CAO_API_BASE_URL=https://api.deepseek.com/v1
+CAO_API_MODEL=deepseek-chat
 ```
 
 ## 常用大模型API配置
@@ -180,7 +180,7 @@ ai:
 或者使用环境变量：
 
 ```env
-AI_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2:3b
+CAO_AI_PROVIDER=ollama
+CAO_OLLAMA_BASE_URL=http://localhost:11434
+CAO_OLLAMA_MODEL=llama3.2:3b
 ```

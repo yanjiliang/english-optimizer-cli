@@ -1,23 +1,27 @@
 # English Optimizer CLI
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](README.md) | [简体中文](README.zh-CN.md) | [Changelog](CHANGELOG.md)
 
-A powerful CLI tool to help non-native English speakers improve their writing using AI. Simply type your text and use hotkeys to instantly optimize it in different styles!
+A powerful CLI tool to help non-native English speakers translate and optimize their writing using AI. Type Chinese or English in interactive mode to get idiomatic English automatically copied to your clipboard, or switch to `--classic` mode for single-key style hotkeys!
 
 ## Features
 
-- 🎯 **Interactive Mode** - Real-time text optimization with hotkeys
-- 🤖 **Multiple AI Backends** - Use local Ollama or cloud APIs (OpenAI, GLM)
-- 📝 **Optimization Modes** - Professional, Concise, Grammar fix, Senior Developer
-- 📜 **History Tracking** - Review your past optimizations and learn
-- 🔧 **Custom Prompts** - Create your own optimization styles
+- ⚡ **One-Shot, Pipe & Clipboard Mode** - Optimize directly from args (`cao "..."` or `eopt "..."`), stdin pipes, or clipboard (`cao -x`) with live streaming output
+- 🎯 **Instant Mode (Default)** - Interactive REPL with slash commands (`/m`, `/v`, `/why`, `/shorter`, `/softer`, `/star`, `/edit`), multi-paragraph `"""` blocks, and inline word-level diffs
+- ⌨️ **Classic Mode (`--classic`)** - Choose optimization styles on the fly with configurable single-key hotkeys
+- 🤖 **Multiple AI Backends** - Local Ollama or cloud APIs (OpenAI, GLM, DeepSeek, Qwen, Moonshot, OpenRouter, Gemini, or custom OpenAI-compatible endpoints)
+- 📝 **Developer Presets & Tone Variants** - Built-in `slack`, `pr`, `commit`, `email`, `professional`, `concise`, `grammar`, `senior_developer`, plus `-v/--variants` and `-e/--explain`
+- 📄 **Markdown-Safe Batch Optimization** - Preserves YAML frontmatter, fenced code blocks, and inline code spans, chunks long files automatically, and supports `--dry-run` diff preview
+- ⭐ **History & Personal Phrasebook** - Search, star, copy, clear, and export saved expressions to Markdown or JSON
+- 🔧 **Custom Prompts Management** - Manage `prompt.yaml`, `translation-prompt.txt`, and `prompts.json` right from the CLI (`cao prompts add/show/remove`)
 - 🐋 **Docker Support** - Easy setup with Ollama in Docker
-- ⚡ **Fast & Private** - Local AI processing with Ollama
+
+> **CLI Command Aliases:** Installing globally provides both `cao` and the neutral alias `eopt` (identical behavior — use whichever fits your environment).
 
 ## Prerequisites
 
-- Node.js 18+ and npm
-- Docker (for local Ollama setup)
+- Node.js 20.19+ (or 22.12+) and npm
+- Docker (optional, for local Ollama setup)
 
 ## YAML Prompt Configuration
 
@@ -148,33 +152,61 @@ cao
 
 ## Usage
 
+### One-Shot, Pipe & Clipboard Mode
+
+Optimize text immediately from the command line without opening an interactive session:
+
+```bash
+# Direct text argument (streams output, shows word diff for English edits, and copies to clipboard)
+cao "这个需求今天能做完，明天提测"
+cao -m pr "这里会有空指针问题，加个判空吧"
+cao -m commit "修复登录过期没有跳转的问题"
+cao -m slack "等我五分钟，刚拉下最新代码"
+cao -m email "麻烦确认下周三上线时间"
+
+# Tone variants (Casual / Neutral / Formal) & brief Chinese explanation
+cao -v "明天能上线吗"
+cao -e "it's works very good"
+
+# Clipboard round-trip: read clipboard -> optimize -> write back to clipboard
+cao -x
+cao --clip -m pr
+
+# Pipe via stdin / stdout (automatically outputs clean raw text when piped)
+echo "fix bug pls" | cao -m concise
+pbpaste | cao --raw | pbcopy
+
+# Per-run provider/model overrides and flags
+cao -p api --model gpt-4o-mini "hello world"
+cao --no-copy --no-stream "quick check"
+```
+
 ### Instant Mode (Default)
 
-Just run the CLI and start typing! Press **Cmd+key** to instantly optimize:
+Run the CLI with no arguments (or `-m <preset>` to start in a specific preset), type Chinese or English, and press Enter on an empty line to stream the translation/optimization:
 
 ```bash
 cao
-# or
-npm start
+cao -m pr   # Start directly in PR / Code Review mode
 ```
 
 **How it works:**
 
-1. Type your text normally
-2. Press `Cmd+P` for Professional tone
-3. Press `Cmd+C` for Concise version
-4. Press `Cmd+G` for Grammar fix
-5. Press `Cmd+D` for Senior developer style
-6. Press **Enter** to accept the optimization, or keep typing to ignore
-
-**Controls:**
-
-- `Ctrl+U` - Clear text
-- `Ctrl+C` - Quit
+1. Type your text (Chinese or English), pressing Enter after each line
+2. Press **Enter** on an empty line to trigger translation/optimization (lookup order: `./prompt.yaml` → `~/.english-optimizer/prompt.yaml` → `~/.english-optimizer/translation-prompt.txt`)
+3. View the bilingual result (plus inline word-level diff when polishing English) — the optimized English is automatically copied to your clipboard
+4. For multi-paragraph text with blank lines, type `"""` to start/end a block or run `/edit` to open `$EDITOR`
+5. Use built-in **Slash Commands** directly in the REPL:
+   - `/m [mode]` — list or switch preset (`translate`, `slack`, `pr`, `commit`, `email`, `professional`, `concise`, `grammar`, `senior_developer`, or custom prompt name)
+   - `/v [text]` — generate 3 tone variants (Casual / Neutral / Formal), then `/1`, `/2`, `/3` to copy
+   - `/why` — stream a concise Chinese explanation of why the phrasing improved
+   - `/shorter`, `/softer`, `/formal`, `/casual` — iteratively refine the previous result
+   - `/star` — star/unstar the last result into your personal phrasebook
+   - `/r` — retry · `/diff` — show word diff · `/copy` — re-copy · `/edit` — open `$EDITOR` · `/h [query]` — history/search · `/q` — quit
 
 ### Classic Mode (Optional)
 
-If you prefer to submit text first, then choose optimizations:
+If you prefer to submit text first and then switch between built-in or custom optimization styles with hotkeys:
 
 ```bash
 cao --classic
@@ -182,39 +214,74 @@ cao --classic
 npm start -- --classic
 ```
 
-1. Enter your text (press Enter twice to finish)
-2. Press hotkeys to see different optimizations:
-   - `Ctrl+P` - Professional tone
-   - `Ctrl+C` - Concise version
-   - `Ctrl+G` - Grammar fix
-   - `Ctrl+D` - Senior developer style
-   - `Ctrl+R` - Reset to original
-   - `Ctrl+H` - View history
-   - `Ctrl+Q` - Quit
+1. Enter your text (press Enter on an empty line to finish)
+2. Press a single-key hotkey (customizable via `hotkeys` in `config.yaml`):
+   - `p` - Professional tone
+   - `c` - Concise version
+   - `g` - Grammar fix
+   - `d` - Senior developer style
+   - `r` - Reset to original
+   - `h` - View history
+   - `q` or `Ctrl+C` - Quit
+   - Any custom hotkey defined in `~/.english-optimizer/prompts.json` (e.g. `a`, `f`)
 
-### View History
+### Batch Optimize Files (Markdown-Safe & Chunked)
+
+Automatically protects YAML frontmatter, fenced code blocks (```` ``` ```` / `~~~`), HTML comments, and inline `` `code` `` spans, and splits long files into paragraph chunks to avoid context truncation:
 
 ```bash
-cao history
-cao history -n 5  # Show last 5 entries
+# Preview changes as a line-level diff without writing files
+cao batch README.md --mode professional --dry-run
+
+# Optimize files using built-in modes, translate, or custom prompt names
+cao batch docs/*.md --mode translate --suffix .en
+cao batch notes.md --mode concise --in-place
+cao batch guide.md --chunk-size 2000
 ```
 
-### List Custom Prompts
+### History & Personal Phrasebook
 
 ```bash
+# View recent history (or search / filter by starred or mode)
+cao history
+cao history -n 20
+cao history --search "null check"
+cao history --starred
+
+# Star, copy, export to Markdown/JSON, or clear
+cao history --star 1
+cao history --copy 1
+cao history --starred --export phrasebook.md
+cao history --clear --keep-starred   # Clear unstarred entries while keeping your phrasebook
+```
+
+### Manage Prompts & Custom Presets
+
+```bash
+# Inspect or edit the active translation prompt (raw YAML or text)
+cao prompt --show
+cao prompt --show --raw > prompt.yaml
+cao prompt --edit
+
+# Full CRUD management for custom prompts (~/.english-optimizer/prompts.json)
 cao prompts
+cao prompts show Academic
+cao prompts add                                      # Interactive wizard
+cao prompts add tweet -d "Tech post" -p "Rewrite as a concise tweet: {text}" -k t
+cao prompts remove tweet
 ```
 
 ### Check Configuration
 
 ```bash
-# Show current configuration
+# Show current configuration (API keys are masked by default)
 cao config
+cao config --show-secrets
 
-# Run interactive setup wizard
+# Run interactive setup wizard (uses masked password input and 0600 file permissions)
 cao config --setup
 
-# Test API configuration
+# Test API configuration (supports -p/--provider and --model overrides)
 cao test
 ```
 
@@ -233,10 +300,12 @@ The setup wizard will guide you through:
 
 ## Configuration
 
-The CLI can be configured via:
+Configuration is resolved in standard CLI precedence order (highest to lowest):
 
-1. **Environment Variables** (`.env` file)
-2. **Config File** (`~/.english-optimizer/config.yaml` or `~/.english-optimizer/config.json`)
+1. **CLI flags** (`-p / --provider`, `--model`)
+2. **Environment variables** (`CAO_*` in shell or `.env` files)
+3. **Config file** (`~/.english-optimizer/config.yaml` or `~/.english-optimizer/config.json`)
+4. **Built-in defaults**
 
 ### Using Cloud APIs (OpenAI, GLM, DeepSeek, etc.)
 
@@ -250,48 +319,50 @@ By default, the CLI uses local Ollama. To use cloud APIs, you need to configure 
 cp .env.example .env
 ```
 
-2. Edit `.env` with your API configuration:
+2. Edit `.env` with your API configuration (use the `CAO_` prefix so local project `.env` files don't conflict with other tools):
 
 ```env
-AI_PROVIDER=api
-API_PROVIDER=openai  # or 'glm', 'custom'
-API_KEY=your_api_key_here
-API_BASE_URL=https://api.openai.com/v1
-API_MODEL=gpt-4o
+CAO_AI_PROVIDER=api
+CAO_API_PROVIDER=openai  # or 'glm', 'deepseek', 'qwen', 'moonshot', 'custom'
+CAO_API_KEY=your_api_key_here
+CAO_API_BASE_URL=https://api.openai.com/v1
+CAO_API_MODEL=gpt-4o
 ```
 
 For detailed API configuration instructions, see [API_SETUP.md](API_SETUP.md)
 
 ### Environment Variables
 
+You can place `.env` in `~/.english-optimizer/.env` (recommended) or in your current directory. Only `CAO_`-prefixed variables are read from `./.env` to avoid colliding with another project's `API_KEY`; legacy unprefixed names (e.g. `API_KEY`) are still supported in `~/.english-optimizer/.env` and in your shell environment.
+
 Copy `.env.example` to `.env`:
 
 ```bash
-cp .env.example .env
+cp .env.example ~/.english-optimizer/.env
 ```
 
 Edit `.env`:
 
 ```env
 # AI Provider: 'ollama' for local, 'api' for cloud
-AI_PROVIDER=ollama
+CAO_AI_PROVIDER=ollama
 
 # Ollama Configuration (local)
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2:3b
+CAO_OLLAMA_BASE_URL=http://localhost:11434
+CAO_OLLAMA_MODEL=llama3.2:3b
 
 # API Configuration (cloud - OpenAI/GLM)
-# AI_PROVIDER=api
-# API_PROVIDER=openai
-# API_KEY=your_api_key_here
-# API_BASE_URL=https://api.openai.com/v1
-# API_MODEL=gpt-3.5-turbo
+# CAO_AI_PROVIDER=api
+# CAO_API_PROVIDER=openai
+# CAO_API_KEY=your_api_key_here
+# CAO_API_BASE_URL=https://api.openai.com/v1
+# CAO_API_MODEL=gpt-4o
 
 # For GLM (Zhipu AI)
-# API_PROVIDER=glm
-# API_KEY=your_glm_api_key
-# API_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-# API_MODEL=glm-4
+# CAO_API_PROVIDER=glm
+# CAO_API_KEY=your_glm_api_key
+# CAO_API_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+# CAO_API_MODEL=glm-4
 ```
 
 ### Config File
@@ -308,7 +379,7 @@ ai:
     provider: 'openai'
     apiKey: ''
     baseUrl: 'https://api.openai.com/v1'
-    model: 'gpt-3.5-turbo'
+    model: 'gpt-4o-mini'
 
 hotkeys:
   professional: 'p'
@@ -371,10 +442,10 @@ To use cloud APIs instead of local Ollama:
 1. Update your `.env` file:
 
    ```env
-   AI_PROVIDER=api
-   API_PROVIDER=openai  # or 'glm' for Zhipu AI
-   API_KEY=your_actual_api_key
-   API_MODEL=gpt-3.5-turbo  # or your preferred model
+   CAO_AI_PROVIDER=api
+   CAO_API_PROVIDER=openai  # or 'glm' for Zhipu AI
+   CAO_API_KEY=your_actual_api_key
+   CAO_API_MODEL=gpt-4o  # or your preferred model
    ```
 
 2. The CLI will automatically use the cloud API
@@ -397,26 +468,42 @@ npm run lint
 ```
 english-optimizer-cli/
 ├── src/
-│   ├── index.ts              # CLI entry point
+│   ├── index.ts                  # CLI entry point (cao / eopt)
 │   ├── core/
-│   │   ├── editor.ts         # Interactive editor with hotkeys
-│   │   └── optimizer.ts      # Optimization orchestration
+│   │   ├── instant-editor.ts     # Default interactive REPL with slash commands
+│   │   ├── oneshot.ts            # One-shot, stdin pipe, and clipboard runner
+│   │   ├── editor.ts             # Classic interactive editor with hotkeys
+│   │   ├── optimizer.ts          # Optimization orchestration
+│   │   ├── batch.ts              # Batch file optimizer with --dry-run
+│   │   └── markdown-chunker.ts   # Markdown-safe code/frontmatter protector & chunker
 │   ├── ai/
-│   │   ├── provider.ts       # AI provider factory
-│   │   ├── ollama.ts         # Ollama integration
-│   │   └── api-provider.ts   # OpenAI/GLM integration
+│   │   ├── provider.ts           # AI provider factory
+│   │   ├── ollama.ts             # Ollama integration (NDJSON streaming)
+│   │   ├── api-provider.ts       # OpenAI-compatible providers (SSE streaming)
+│   │   └── stream-utils.ts       # SSE & NDJSON stream decoders
 │   ├── prompts/
-│   │   ├── templates.ts      # Built-in prompt templates
-│   │   └── custom.ts         # Custom prompt loader
+│   │   ├── templates.ts          # Built-in mode templates (slack/pr/commit/email/...)
+│   │   ├── resolver.ts           # Unified mode & prompt resolver
+│   │   ├── structured.ts         # Variants & explain prompt builders/parsers
+│   │   ├── yaml-prompt.ts        # Project/global prompt.yaml loader
+│   │   ├── translation-prompt.ts # translation-prompt.txt loader
+│   │   ├── custom.ts             # Custom prompts store (prompts.json)
+│   │   └── commands.ts           # CLI prompts CRUD handlers
 │   ├── config/
-│   │   └── config.ts         # Configuration management
+│   │   ├── config.ts             # Config loader, CAO_* env isolation, masking
+│   │   ├── wizard.ts             # Interactive setup wizard
+│   │   └── test.ts               # API connectivity & auth diagnostics
 │   ├── history/
-│   │   └── logger.ts         # History logging
+│   │   ├── logger.ts             # History & starred phrasebook store
+│   │   └── commands.ts           # CLI history search/star/export/clear handlers
 │   └── utils/
-│       └── display.ts        # Output formatting
-├── docker-compose.yml        # Ollama Docker setup
+│       ├── display.ts            # Output formatting, word/line diff, truncation
+│       └── spinner.ts            # Lightweight TTY-aware spinner
+├── docker-compose.yml            # Ollama Docker setup
 ├── scripts/
-│   └── setup-ollama.sh      # Setup script
+│   ├── bump-version.js           # Semver bump helper (syncs lockfile)
+│   └── setup-ollama.sh           # Ollama setup script
+├── CHANGELOG.md                  # Release history
 └── package.json
 ```
 
