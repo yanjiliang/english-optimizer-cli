@@ -5,11 +5,14 @@ src/
 
 # Config files
 .env
-.env.example
-tsconfig.json
-.prettierrc
+.env.*
+tsconfig*.json
+.prettierrc*
+eslint.config.*
+vitest.config.*
 
 # Development files
+.claude/
 .git/
 .gitignore
 .github/
@@ -18,20 +21,20 @@ tsconfig.json
 # Scripts
 scripts/
 
-# Documentation
-README.md
+# Documentation (internal/examples)
 TRANSLATION_PROMPT_EXAMPLE.md
 
 # Logs
 *.log
 npm-debug.log*
 
-# Tests (if any)
+# Tests
 test/
 tests/
-*.test.ts
+*.test.*
+*.spec.*
 
-# Build artifacts that shouldn't be published (we only want dist/)
+# Build artifacts that shouldn't be published
 .history/
 coverage/
 *.tsbuildinfo
@@ -39,8 +42,11 @@ coverage/
 # Keep important files
 !dist/
 !package.json
-!package-lock.json
 !config.yaml
 !prompt.yaml
 !docker-compose.yml
 !README.md
+!README.zh-CN.md
+!CHANGELOG.md
+!API_SETUP.md
+!LICENSE

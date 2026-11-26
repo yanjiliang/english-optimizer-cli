@@ -4,22 +4,25 @@
   "description": "CLI tool to help non-native English speakers improve their writing using AI",
   "main": "dist/index.js",
   "bin": {
-    "cao": "./dist/index.js"
+    "cao": "./dist/index.js",
+    "eopt": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "watch": "tsc --watch",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage",
+    "test:coverage": "vitest run --coverage",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "install-config": "node scripts/install-config.js",
-    "version": "node scripts/bump-version.js",
+    "preversion": "npm run lint && npm run format:check && npm test && npm run build",
+    "version:bump": "node scripts/bump-version.js",
     "release:patch": "npm version patch && git push && git push --tags",
     "release:minor": "npm version minor && git push && git push --tags",
     "release:major": "npm version major && git push && git push --tags"
@@ -36,24 +39,18 @@
   "dependencies": {
     "axios": "^1.7.9",
     "chalk": "^5.3.0",
-    "cli-cursor": "^5.0.0",
     "clipboardy": "^5.0.2",
     "commander": "^14.0.2",
     "diff": "^8.0.2",
     "dotenv": "^17.2.3",
     "inquirer": "^13.1.0",
     "js-yaml": "^4.1.0",
-    "keypress": "^0.2.1",
-    "ora": "^9.0.0",
-    "uuid": "^13.0.0",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/diff": "^7.0.2",
-    "@types/inquirer": "^9.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.14.1",
-    "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.21.0",
     "@typescript-eslint/parser": "^8.21.0",
     "@vitest/coverage-v8": "^3.0.6",
@@ -65,6 +62,6 @@
     "vitest": "^3.0.6"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "^20.19.0 || >=22.12.0"
   }
 }
